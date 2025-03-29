@@ -20,6 +20,8 @@ catch_errors
 read -rp "🔐 Ingresa tu API Key de Cloudflare: " CF_API_KEY
 read -rp "🌐 Ingresa tu dominio (ZONE) en Cloudflare (ej: midominio.com): " CF_ZONE
 read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
+read -rsp "🔑 Ingresa la contraseña que tendrá el usuario root del contenedor: " ROOT_PASSWORD
+echo
 
 # ========================
 # Fijar storage directamente
@@ -48,6 +50,11 @@ pct create $CTID local:vztmpl/${TEMPLATE} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
   -unprivileged ${var_unprivileged} \
   -features nesting=1
+
+# ========================
+# Asignar contraseña al usuario root
+# ========================
+pct set $CTID -password "$ROOT_PASSWORD"
 
 pct start $CTID
 sleep 5
@@ -85,4 +92,4 @@ EOF
 "
 
 msg_ok "✅ Cloudflare DDNS desplegado correctamente en el contenedor LXC #$CTID"
-echo -e "${INFO}${YW} Está sincronizando en el dominio: ${CF_SUBDOMAIN}.${CF_ZONE}${CL}"
+echo -e "${INFO}${YW} Puedes acceder al contenedor con 'pct enter $CTID' usando la contraseña que proporcionaste.${CL}"
