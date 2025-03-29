@@ -1,4 +1,7 @@
-#!/usr/bin/env bash
+from pathlib import Path
+
+# Contenido corregido del script con detección válida de storage compatible
+script_content = """#!/usr/bin/env bash
 source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
 APP="Cloudflare-DDNS"
 var_tags="docker ddns cloudflare"
@@ -24,7 +27,7 @@ read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " 
 # ========================
 # Detectar storage válido para contenedores
 # ========================
-DETECTED_STORAGE=$(pvesm status --verbose | awk '$2 == "container" {print $1; exit}')
+DETECTED_STORAGE=$(pvesm status | awk 'NR>1 && $6 ~ /container/ {print $1; exit}')
 if [[ -z "$DETECTED_STORAGE" ]]; then
   msg_error "No se pudo detectar un almacenamiento compatible con contenedores LXC."
   exit 1
@@ -90,3 +93,11 @@ EOF
 
 msg_ok "✅ Cloudflare DDNS desplegado correctamente en el contenedor LXC #$CTID"
 echo -e "${INFO}${YW} Está sincronizando el subdominio: ${CF_SUBDOMAIN}.${CF_ZONE}${CL}"
+"""
+
+# Guardar el script como archivo .sh corregido
+script_path = Path("/mnt/data/deploy-cloudflare-ddns-final.sh")
+script_path.write_text(script_content)
+script_path.chmod(0o755)
+
+script_path.name
