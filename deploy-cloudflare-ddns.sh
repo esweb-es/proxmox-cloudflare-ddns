@@ -51,13 +51,13 @@ pct create $CTID local:vztmpl/${TEMPLATE} \
   -unprivileged ${var_unprivileged} \
   -features nesting=1
 
+pct start $CTID
+sleep 5
+
 # ========================
 # Asignar contraseña al usuario root
 # ========================
-pct set $CTID -password "$ROOT_PASSWORD"
-
-pct start $CTID
-sleep 5
+lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
 # ========================
 # Instalar Docker dentro del contenedor
@@ -92,4 +92,4 @@ EOF
 "
 
 msg_ok "✅ Cloudflare DDNS desplegado correctamente en el contenedor LXC #$CTID"
-echo -e "${INFO}${YW} Puedes acceder al contenedor con 'pct enter $CTID' usando la contraseña que proporcionaste.${CL}"
+echo -e "${INFO}${YW} Puedes acceder al contenedor con 'pct enter $CTID' y usar la contraseña proporcionada para root.${CL}"
