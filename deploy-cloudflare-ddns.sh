@@ -22,7 +22,7 @@ read -rp "🌐 Ingresa tu dominio (ZONE) en Cloudflare (ej: midominio.com): " CF
 read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
 
 # ========================
-# Usar local-lvm como storage directamente
+# Fijar storage directamente
 # ========================
 DETECTED_STORAGE="local-lvm"
 
@@ -39,14 +39,14 @@ fi
 # Crear contenedor automáticamente
 # ========================
 CTID=$(pvesh get /cluster/nextid)
-pct create $CTID local:vztmpl/${TEMPLATE} \\
-  -hostname cloudflare-ddns \\
-  -storage ${DETECTED_STORAGE} \\
-  -rootfs ${DETECTED_STORAGE}:${var_disk} \\
-  -memory ${var_ram} \\
-  -cores ${var_cpu} \\
-  -net0 name=eth0,bridge=vmbr0,ip=dhcp \\
-  -unprivileged ${var_unprivileged} \\
+pct create $CTID local:vztmpl/${TEMPLATE} \
+  -hostname cloudflare-ddns \
+  -storage ${DETECTED_STORAGE} \
+  -rootfs ${DETECTED_STORAGE}:${var_disk} \
+  -memory ${var_ram} \
+  -cores ${var_cpu} \
+  -net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  -unprivileged ${var_unprivileged} \
   -features nesting=1
 
 pct start $CTID
@@ -59,7 +59,7 @@ lxc-attach -n $CTID -- bash -c "
   apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  echo \\"deb [arch=\\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\\" > /etc/apt/sources.list.d/docker.list
+  echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
   apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 "
 
