@@ -85,4 +85,4 @@ EOF
 "
 
 msg_ok "✅ Cloudflare DDNS desplegado correctamente en el contenedor LXC #$CTID"
-echo -e "${INFO}${YW} Está sincronizando el subdominio: ${CF_SUBDOMAIN}.${CF_ZONE}${CL}"
+echo -e "${INFO}${YW} Está sincronizando en el dominio: ${CF_SUBDOMAIN}.${CF_ZONE}${CL}"
