@@ -22,14 +22,42 @@ read -rp "🌐 Ingresa tu dominio (ZONE) en Cloudflare (ej: midominio.com): " CF
 read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
 
 # ========================
-# Creación del contenedor
+# Detectar storage válido
 # ========================
-start
-build_container
-description
+DETECTED_STORAGE=$(pvesm status | awk 'NR>1 && $2=="dir" {print $1; exit}')
+if [[ -z "$DETECTED_STORAGE" ]]; then
+  msg_error "No se pudo detectar un almacenamiento válido para contenedores."
+  exit 1
+fi
 
 # ========================
-# Instalación de Docker y Compose
+# Descargar plantilla si no existe
+# ========================
+TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
+if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]]; then
+  pveam update
+  pveam download ${DETECTED_STORAGE} ${TEMPLATE}
+fi
+
+# ========================
+# Crear contenedor automáticamente
+# ========================
+CTID=$(pvesh get /cluster/nextid)
+pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
+  -hostname cloudflare-ddns \
+  -storage ${DETECTED_STORAGE} \
+  -rootfs ${DETECTED_STORAGE}:${var_disk} \
+  -memory ${var_ram} \
+  -cores ${var_cpu} \
+  -net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  -unprivileged ${var_unprivileged} \
+  -features nesting=1
+
+pct start $CTID
+sleep 5
+
+# ========================
+# Instalar Docker dentro del contenedor
 # ========================
 lxc-attach -n $CTID -- bash -c "
   apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
