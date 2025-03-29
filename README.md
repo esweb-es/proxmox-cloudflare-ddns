@@ -18,3 +18,6 @@ Para crear un token de API de Cloudflare para DDNS, puedes seguir estos pasos:
     
 9: Ir a resumen y crear token.
 10: En el input te aparecera el token, copialo y pegalo en un lugar seguro.
+
+
+Ejecuta el siguiente script en la shell de tu nodo Proxmox.
