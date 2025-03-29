@@ -55,7 +55,7 @@ pct start $CTID
 sleep 5
 
 # ========================
-# Asignar contraseña al usuario root
+# Asignar contraseña al usuario root correctamente
 # ========================
 lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
