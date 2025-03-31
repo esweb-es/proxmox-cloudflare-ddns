@@ -17,6 +17,7 @@ Para crear un token de API de Cloudflare para DDNS, puedes seguir estos pasos:
     INCLUIR -> TODAS LAS ZONAS
     
 9: Ir a resumen y crear token.
+
 10: En el input te aparecera el token, copialo y pegalo en un lugar seguro.
 
 
