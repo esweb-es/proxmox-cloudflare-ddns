@@ -25,4 +25,7 @@ Ejecuta el siguiente script en la shell de tu nodo Proxmox.
 
     bash <(curl -s https://raw.githubusercontent.com/esweb-es/proxmox-cloudflare-ddns/main/deploy-cloudflare-ddns.sh)
 
-     bash <(curl -s https://raw.githubusercontent.com/esweb-es/proxmox-cloudflare-ddns/main/deploy-cloudflare-ddns-alpine.sh)
+Alternativa con Alpine (menos recursos)
+
+    bash <(curl -s https://raw.githubusercontent.com/esweb-es/proxmox-cloudflare-ddns/main/deploy-cloudflare-ddns-alpine.sh)
+     
