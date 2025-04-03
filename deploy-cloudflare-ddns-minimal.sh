@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-
-# ========================
-# Funciones de Proxmox Helpers
-# ========================
 source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
-
 APP="Cloudflare-DDNS"
-var_tags="docker ddns cloudflare"
+var_tags="docker ddns cloudflared"
 var_cpu="1"
-var_ram="128"
-var_disk="1"
+var_ram="512"
+var_disk="2"
 var_os="debian"
 var_version="12"
 var_unprivileged="1"
-TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
-DETECTED_STORAGE="local-lvm"
 
 header_info "$APP"
 variables
@@ -27,18 +20,18 @@ catch_errors
 read -rp "🔐 Ingresa tu API Key de Cloudflare: " CF_API_KEY
 read -rp "🌐 Ingresa tu dominio (ZONE) en Cloudflare (ej: midominio.com): " CF_ZONE
 read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
-read -rsp "🔑 Ingresa la contraseña que tendrá el usuario root del contenedor: " ROOT_PASSWORD"
+read -rsp "🔑 Ingresa la contraseña que tendrá el usuario root del contenedor: " ROOT_PASSWORD
 echo
 
-# Validación
-if [[ -z "$CF_API_KEY" || -z "$CF_ZONE" || -z "$CF_SUBDOMAIN" || -z "$ROOT_PASSWORD" ]]; then
-  echo -e "\n❌ Todos los campos son obligatorios. Abortando."
-  exit 1
-fi
+# ========================
+# Fijar storage directamente
+# ========================
+DETECTED_STORAGE="local-lvm"
 
 # ========================
 # Descargar plantilla si no existe
 # ========================
+TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
 if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]]; then
   pveam update
   pveam download local ${TEMPLATE}
@@ -48,12 +41,6 @@ fi
 # Crear contenedor automáticamente
 # ========================
 CTID=$(pvesh get /cluster/nextid)
-
-if [[ -z "$CTID" ]]; then
-  echo "❌ No se pudo obtener un CTID válido. Abortando."
-  exit 1
-fi
-
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-ddns \
   -storage ${DETECTED_STORAGE} \
@@ -65,22 +52,15 @@ pct create $CTID local:vztmpl/${TEMPLATE} \
   -features nesting=1
 
 pct start $CTID
+sleep 5
 
 # ========================
-# Esperar a que el contenedor arranque
-# ========================
-echo "⏳ Esperando que el contenedor #$CTID inicie..."
-until pct status $CTID | grep -q "status: running"; do
-  sleep 1
-done
-
-# ========================
-# Asignar contraseña root
+# Asignar contraseña al usuario root correctamente
 # ========================
 lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
 # ========================
-# Instalar Docker
+# Instalar Docker dentro del contenedor
 # ========================
 lxc-attach -n $CTID -- bash -c "
   apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
@@ -112,5 +92,4 @@ EOF
 "
 
 msg_ok "✅ Cloudflare DDNS desplegado correctamente en el contenedor LXC #$CTID"
-echo -e "${INFO}${YW} Puedes acceder al contenedor con:\n${CL}pct enter $CTID"
-echo -e "${INFO}${YW} Usa la contraseña que ingresaste para el usuario root.${CL}"
+echo -e "${INFO}${YW} Puedes acceder al contenedor con 'pct enter $CTID' y usar la contraseña proporcionada para root.${CL}"
