@@ -1,24 +1,39 @@
 #!/usr/bin/env bash
-source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+
+# ========================
+# Funciones básicas sin dependencias externas
+# ========================
+function msg_info() {
+  echo -e "\033[1;34m[INFO]\033[0m $1"
+}
+
+function msg_ok() {
+  echo -e "\033[1;32m[OK]\033[0m $1"
+}
+
+function msg_error() {
+  echo -e "\033[1;31m[ERROR]\033[0m $1"
+}
+
+# ========================
+# Variables básicas
+# ========================
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
-var_tags="docker ddns cloudflare cloudflared"
+CT_HOSTNAME="cloudflare-stack"
+TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
+DETECTED_STORAGE="local-lvm"
 var_cpu="1"
 var_ram="512"
 var_disk="2"
-var_os="debian"
-var_version="12"
 var_unprivileged="1"
 
-header_info "$APP"
-variables
-color
-catch_errors
+msg_info "Desplegando: $APP"
 
 # ========================
-# Preguntas condicionales
+# Preguntas al usuario
 # ========================
 read -rp "❓ ¿Quieres instalar Cloudflare DDNS? [s/n]: " INSTALL_DDNS
-INSTALL_DDNS=${INSTALL_DDNS,,} # minúsculas
+INSTALL_DDNS=${INSTALL_DDNS,,}
 
 if [[ "$INSTALL_DDNS" == "s" ]]; then
   read -rp "🔐 Ingresa tu API Key de Cloudflare: " CF_API_KEY
@@ -37,15 +52,10 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Fijar storage directamente
-# ========================
-DETECTED_STORAGE="local-lvm"
-
-# ========================
 # Descargar plantilla si no existe
 # ========================
-TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
 if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]]; then
+  msg_info "Descargando plantilla ${TEMPLATE}..."
   pveam update
   pveam download local ${TEMPLATE}
 fi
@@ -54,8 +64,10 @@ fi
 # Crear contenedor automáticamente
 # ========================
 CTID=$(pvesh get /cluster/nextid)
+msg_info "Creando contenedor LXC con ID $CTID..."
+
 pct create $CTID local:vztmpl/${TEMPLATE} \
-  -hostname cloudflare-stack \
+  -hostname $CT_HOSTNAME \
   -storage ${DETECTED_STORAGE} \
   -rootfs ${DETECTED_STORAGE}:${var_disk} \
   -memory ${var_ram} \
@@ -70,11 +82,13 @@ sleep 5
 # ========================
 # Asignar contraseña root
 # ========================
+msg_info "Asignando contraseña de root..."
 lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
 # ========================
-# Instalar Docker
+# Instalar Docker dentro del contenedor
 # ========================
+msg_info "Instalando Docker dentro del contenedor..."
 lxc-attach -n $CTID -- bash -c "
   apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
   install -m 0755 -d /etc/apt/keyrings
@@ -84,9 +98,10 @@ lxc-attach -n $CTID -- bash -c "
 "
 
 # ========================
-# Instalar Cloudflare DDNS
+# Docker Compose: Cloudflare DDNS
 # ========================
 if [[ "$INSTALL_DDNS" == "s" ]]; then
+  msg_info "Configurando Cloudflare DDNS dentro del contenedor..."
   lxc-attach -n $CTID -- bash -c "
     mkdir -p /opt/ddns && cd /opt/ddns
     cat <<EOF > docker-compose.yml
@@ -103,22 +118,23 @@ services:
 EOF
     docker compose up -d
   "
-  msg_ok "✅ Cloudflare DDNS desplegado correctamente"
+  msg_ok "Cloudflare DDNS desplegado correctamente"
 fi
 
 # ========================
-# Instalar Cloudflared Tunnel
+# Docker: Cloudflared Tunnel
 # ========================
 if [[ "$INSTALL_TUNNEL" == "s" ]]; then
+  msg_info "Desplegando Cloudflared Tunnel..."
   lxc-attach -n $CTID -- bash -c "
     docker run -d --name cloudflared \
       cloudflare/cloudflared:latest tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
   "
-  msg_ok "✅ Cloudflared Tunnel desplegado correctamente"
+  msg_ok "Cloudflared Tunnel desplegado correctamente"
 fi
 
 # ========================
 # Final
 # ========================
-msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
-echo -e "${INFO}${YW} Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.${CL}"
+msg_ok "🎉 Contenedor LXC #$CTID desplegado correctamente."
+echo -e "[INFO] Puedes acceder con: \033[1;33mpct enter $CTID\033[0m y usar la contraseña de root proporcionada."
