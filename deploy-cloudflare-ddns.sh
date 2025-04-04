@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
-APP="Cloudflare-DDNS"
-var_tags="docker ddns cloudflare"
+APP="Cloudflare-DDNS / Cloudflared Tunnel"
+var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
 var_ram="512"
 var_disk="2"
@@ -15,12 +15,25 @@ color
 catch_errors
 
 # ========================
-# Preguntas al usuario
+# Preguntas condicionales
 # ========================
-read -rp "🔐 Ingresa tu API Key de Cloudflare: " CF_API_KEY
-read -rp "🌐 Ingresa tu dominio (ZONE) en Cloudflare (ej: midominio.com): " CF_ZONE
-read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
-read -rsp "🔑 Ingresa la contraseña que tendrá el usuario root del contenedor: " ROOT_PASSWORD
+read -rp "❓ ¿Quieres instalar Cloudflare DDNS? [s/n]: " INSTALL_DDNS
+INSTALL_DDNS=${INSTALL_DDNS,,} # minúsculas
+
+if [[ "$INSTALL_DDNS" == "s" ]]; then
+  read -rp "🔐 Ingresa tu API Key de Cloudflare: " CF_API_KEY
+  read -rp "🌐 Ingresa tu dominio (ZONE) en Cloudflare (ej: midominio.com): " CF_ZONE
+  read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
+fi
+
+read -rp "❓ ¿Quieres instalar Cloudflared Tunnel? [s/n]: " INSTALL_TUNNEL
+INSTALL_TUNNEL=${INSTALL_TUNNEL,,}
+
+if [[ "$INSTALL_TUNNEL" == "s" ]]; then
+  read -rp "🔑 Ingresa tu token del túnel de Cloudflare: " CF_TUNNEL_TOKEN
+fi
+
+read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedor: " ROOT_PASSWORD
 echo
 
 # ========================
@@ -42,7 +55,7 @@ fi
 # ========================
 CTID=$(pvesh get /cluster/nextid)
 pct create $CTID local:vztmpl/${TEMPLATE} \
-  -hostname cloudflare-ddns \
+  -hostname cloudflare-stack \
   -storage ${DETECTED_STORAGE} \
   -rootfs ${DETECTED_STORAGE}:${var_disk} \
   -memory ${var_ram} \
@@ -55,12 +68,12 @@ pct start $CTID
 sleep 5
 
 # ========================
-# Asignar contraseña al usuario root correctamente
+# Asignar contraseña root
 # ========================
 lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
 # ========================
-# Instalar Docker dentro del contenedor
+# Instalar Docker
 # ========================
 lxc-attach -n $CTID -- bash -c "
   apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
@@ -71,11 +84,12 @@ lxc-attach -n $CTID -- bash -c "
 "
 
 # ========================
-# Docker Compose: Cloudflare DDNS
+# Instalar Cloudflare DDNS
 # ========================
-lxc-attach -n $CTID -- bash -c "
-  mkdir -p /opt/ddns && cd /opt/ddns
-  cat <<EOF > docker-compose.yml
+if [[ "$INSTALL_DDNS" == "s" ]]; then
+  lxc-attach -n $CTID -- bash -c "
+    mkdir -p /opt/ddns && cd /opt/ddns
+    cat <<EOF > docker-compose.yml
 version: '3'
 services:
   cloudflare-ddns:
@@ -87,9 +101,24 @@ services:
       - SUBDOMAIN=${CF_SUBDOMAIN}
       - PROXIED=false
 EOF
+    docker compose up -d
+  "
+  msg_ok "✅ Cloudflare DDNS desplegado correctamente"
+fi
 
-  docker compose up -d
-"
+# ========================
+# Instalar Cloudflared Tunnel
+# ========================
+if [[ "$INSTALL_TUNNEL" == "s" ]]; then
+  lxc-attach -n $CTID -- bash -c "
+    docker run -d --name cloudflared \
+      cloudflare/cloudflared:latest tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+  "
+  msg_ok "✅ Cloudflared Tunnel desplegado correctamente"
+fi
 
-msg_ok "✅ Cloudflare DDNS desplegado correctamente en el contenedor LXC #$CTID"
-echo -e "${INFO}${YW} Puedes acceder al contenedor con 'pct enter $CTID' y usar la contraseña proporcionada para root.${CL}"
+# ========================
+# Final
+# ========================
+msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
+echo -e "${INFO}${YW} Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.${CL}"
