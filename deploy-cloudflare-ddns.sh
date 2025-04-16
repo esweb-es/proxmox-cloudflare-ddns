@@ -1,20 +1,70 @@
 #!/usr/bin/env bash
 
-source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+# ========================
+# Funciones de utilidad
+# ========================
+function msg_info() {
+  local msg="$1"
+  echo -e "\e[1;34m${msg}\e[0m"
+}
 
+function msg_ok() {
+  local msg="$1"
+  echo -e "\e[1;32m${msg}\e[0m"
+}
+
+function msg_error() {
+  local msg="$1"
+  echo -e "\e[1;31m${msg}\e[0m"
+}
+
+function catch_errors() {
+  set -e
+  trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
+  trap 'if [ $? -ne 0 ]; then echo -e "\e[1;31mERROR: El comando \"${last_command}\" falló con código de salida $?.\e[0m"; fi' EXIT
+}
+
+# ========================
+# Configuración inicial
+# ========================
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
-var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
 var_ram="512"
 var_disk="2"
-var_os="debian"
-var_version="12"
 var_unprivileged="1"
 
-header_info "$APP"
-variables
-color
+# Iniciar captura de errores
 catch_errors
+
+# ========================
+# Cabecera
+# ========================
+clear
+echo -e "\e[1;33m"
+echo "  ___ _                 _  __ _                 "
+echo " / __| |___  _  _ __| |/ _| |__ _ _ _ ___    "
+echo "| (__| / _ \| || |/ _  |  _| / _\` | '_/ -_)   "
+echo " \___|_\___/ \_,_|___|_|_| |_\__,_|_| \___|   "
+echo "                                              "
+echo -e "\e[1;32mInstalador de Cloudflare DDNS y Cloudflared Tunnel\e[0m"
+echo -e "\e[1;34m--------------------------------------------\e[0m"
+echo ""
+
+# ========================
+# Verificar si es root
+# ========================
+if [ "$(id -u)" -ne 0 ]; then
+  msg_error "❌ Este script debe ejecutarse como root"
+  exit 1
+fi
+
+# ========================
+# Verificar si es Proxmox
+# ========================
+if [ ! -f /etc/pve/pve.cfg ]; then
+  msg_error "❌ Este script debe ejecutarse en un servidor Proxmox"
+  exit 1
+fi
 
 # ========================
 # Preguntas condicionales
@@ -60,7 +110,10 @@ fi
 # Descargar plantilla si no existe
 # ========================
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
-if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" && ! -f "/var/lib/pve/local/template/cache/${TEMPLATE}" ]]; then
+TEMPLATE_PATH="/var/lib/vz/template/cache/${TEMPLATE}"
+TEMPLATE_PATH_ALT="/var/lib/pve/local/template/cache/${TEMPLATE}"
+
+if [[ ! -f "$TEMPLATE_PATH" && ! -f "$TEMPLATE_PATH_ALT" ]]; then
   msg_info "📥 Descargando plantilla Debian 12..."
   pveam update
   if ! pveam download ${DETECTED_STORAGE} ${TEMPLATE}; then
@@ -187,7 +240,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: always
-    command: tunnel --no-autoupdate run --token \${CF_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
 EOF
     
     # Iniciar el servicio
@@ -234,13 +287,13 @@ fi
 # Final
 # ========================
 msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
-echo -e "${INFO}${YW} Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.${CL}"
-echo -e "${INFO}${YW} Para actualizar los servicios en el futuro, ejecuta: 'actualizar-servicios.sh'${CL}"
+echo -e "\e[1;33mPuedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.\e[0m"
+echo -e "\e[1;33mPara actualizar los servicios en el futuro, ejecuta: 'actualizar-servicios.sh'\e[0m"
 
 if [[ "$INSTALL_DDNS" == "s" ]]; then
-  echo -e "${INFO}${YW} Cloudflare DDNS configurado para: ${CF_SUBDOMAIN}.${CF_ZONE}${CL}"
+  echo -e "\e[1;33mCloudflare DDNS configurado para: ${CF_SUBDOMAIN}.${CF_ZONE}\e[0m"
 fi
 
 if [[ "$INSTALL_TUNNEL" == "s" ]]; then
-  echo -e "${INFO}${YW} Cloudflared Tunnel desplegado correctamente. Configura tus aplicaciones en el panel de Cloudflare.${CL}"
+  echo -e "\e[1;33mCloudflared Tunnel desplegado correctamente. Configura tus aplicaciones en el panel de Cloudflare.\e[0m"
 fi
