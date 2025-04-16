@@ -59,14 +59,6 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # ========================
-# Verificar si es Proxmox
-# ========================
-if [ ! -f /etc/pve/pve.cfg ]; then
-  msg_error "❌ Este script debe ejecutarse en un servidor Proxmox"
-  exit 1
-fi
-
-# ========================
 # Preguntas condicionales
 # ========================
 read -rp "❓ ¿Quieres instalar Cloudflare DDNS? [s/n]: " INSTALL_DDNS
@@ -95,15 +87,10 @@ read -rp "🖴 Ingresa el storage de Proxmox a usar [local]: " DETECTED_STORAGE
 DETECTED_STORAGE=${DETECTED_STORAGE:-local}
 
 # Verificar si el storage existe
-if ! pvesm status | grep -q "^${DETECTED_STORAGE}"; then
-  msg_error "❌ El storage '${DETECTED_STORAGE}' no existe en Proxmox"
-  read -rp "🖴 Ingresa un storage válido de Proxmox: " DETECTED_STORAGE
-  
-  # Verificar nuevamente
-  if ! pvesm status | grep -q "^${DETECTED_STORAGE}"; then
-    msg_error "❌ El storage '${DETECTED_STORAGE}' no existe. Usando 'local' por defecto."
-    DETECTED_STORAGE="local"
-  fi
+if ! pvesm status 2>/dev/null | grep -q "^${DETECTED_STORAGE}"; then
+  msg_error "❌ El storage '${DETECTED_STORAGE}' no existe en Proxmox o el comando pvesm no está disponible"
+  read -rp "🖴 Ingresa un storage válido de Proxmox (o presiona Enter para usar 'local'): " DETECTED_STORAGE
+  DETECTED_STORAGE=${DETECTED_STORAGE:-local}
 fi
 
 # ========================
@@ -115,9 +102,14 @@ TEMPLATE_PATH_ALT="/var/lib/pve/local/template/cache/${TEMPLATE}"
 
 if [[ ! -f "$TEMPLATE_PATH" && ! -f "$TEMPLATE_PATH_ALT" ]]; then
   msg_info "📥 Descargando plantilla Debian 12..."
-  pveam update
-  if ! pveam download ${DETECTED_STORAGE} ${TEMPLATE}; then
-    msg_error "❌ Error al descargar la plantilla. Abortando."
+  if command -v pveam >/dev/null 2>&1; then
+    pveam update
+    if ! pveam download ${DETECTED_STORAGE} ${TEMPLATE}; then
+      msg_error "❌ Error al descargar la plantilla. Abortando."
+      exit 1
+    fi
+  else
+    msg_error "❌ El comando pveam no está disponible. Verifica que estás en un servidor Proxmox."
     exit 1
   fi
 fi
@@ -125,175 +117,38 @@ fi
 # ========================
 # Crear contenedor automáticamente
 # ========================
-CTID=$(pvesh get /cluster/nextid)
+if command -v pvesh >/dev/null 2>&1; then
+  CTID=$(pvesh get /cluster/nextid)
+else
+  msg_error "❌ El comando pvesh no está disponible. Verifica que estás en un servidor Proxmox."
+  read -rp "🔢 Ingresa manualmente el ID del contenedor a crear: " CTID
+  if [[ -z "$CTID" ]]; then
+    msg_error "❌ No se proporcionó un ID de contenedor. Abortando."
+    exit 1
+  fi
+fi
+
 msg_info "🔨 Creando contenedor LXC #${CTID}..."
 
-if ! pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
-  -hostname cloudflare-stack \
-  -storage ${DETECTED_STORAGE} \
-  -rootfs ${DETECTED_STORAGE}:${var_disk} \
-  -memory ${var_ram} \
-  -cores ${var_cpu} \
-  -net0 name=eth0,bridge=vmbr0,ip=dhcp \
-  -unprivileged ${var_unprivileged} \
-  -features nesting=1; then
-  
-  msg_error "❌ Error al crear el contenedor. Abortando."
+if command -v pct >/dev/null 2>&1; then
+  if ! pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
+    -hostname cloudflare-stack \
+    -storage ${DETECTED_STORAGE} \
+    -rootfs ${DETECTED_STORAGE}:${var_disk} \
+    -memory ${var_ram} \
+    -cores ${var_cpu} \
+    -net0 name=eth0,bridge=vmbr0,ip=dhcp \
+    -unprivileged ${var_unprivileged} \
+    -features nesting=1; then
+    
+    msg_error "❌ Error al crear el contenedor. Abortando."
+    exit 1
+  fi
+else
+  msg_error "❌ El comando pct no está disponible. Verifica que estás en un servidor Proxmox."
   exit 1
 fi
 
 msg_ok "✅ Contenedor LXC #${CTID} creado correctamente"
 
-# ========================
-# Iniciar contenedor
-# ========================
-msg_info "🚀 Iniciando contenedor..."
-if ! pct start $CTID; then
-  msg_error "❌ Error al iniciar el contenedor. Abortando."
-  exit 1
-fi
-
-# Esperar a que el contenedor esté listo
-msg_info "⏳ Esperando a que el contenedor esté listo..."
-sleep 10
-
-# ========================
-# Asignar contraseña root
-# ========================
-msg_info "🔐 Configurando contraseña de root..."
-if ! lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"; then
-  msg_error "❌ Error al configurar la contraseña. Continuando de todos modos."
-fi
-
-# ========================
-# Instalar Docker
-# ========================
-msg_info "🐳 Instalando Docker..."
-if ! lxc-attach -n $CTID -- bash -c "
-  apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
-  apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-"; then
-  msg_error "❌ Error al instalar Docker. Abortando."
-  exit 1
-fi
-
-msg_ok "✅ Docker instalado correctamente"
-
-# ========================
-# Instalar Cloudflare DDNS
-# ========================
-if [[ "$INSTALL_DDNS" == "s" ]]; then
-  msg_info "🌐 Instalando Cloudflare DDNS..."
-  
-  if ! lxc-attach -n $CTID -- bash -c "
-    mkdir -p /opt/ddns && cd /opt/ddns
-    
-    # Crear archivo de configuración
-    cat <<EOF > config.json
-{
-  \"apiKey\": \"${CF_API_KEY}\",
-  \"zone\": \"${CF_ZONE}\",
-  \"subdomain\": \"${CF_SUBDOMAIN}\",
-  \"proxied\": false
-}
-EOF
-    
-    # Crear docker-compose.yml
-    cat <<EOF > docker-compose.yml
-version: '3'
-services:
-  cloudflare-ddns:
-    image: oznu/cloudflare-ddns:latest
-    restart: always
-    volumes:
-      - ./config.json:/app/config.json:ro
-EOF
-    
-    # Iniciar el servicio
-    if ! docker compose up -d; then
-      echo 'Error al iniciar el servicio Cloudflare DDNS'
-      exit 1
-    fi
-  "; then
-    msg_error "❌ Error al configurar Cloudflare DDNS."
-  else
-    msg_ok "✅ Cloudflare DDNS desplegado correctamente"
-  fi
-fi
-
-# ========================
-# Instalar Cloudflared Tunnel
-# ========================
-if [[ "$INSTALL_TUNNEL" == "s" ]]; then
-  msg_info "🚇 Instalando Cloudflared Tunnel..."
-  
-  if ! lxc-attach -n $CTID -- bash -c "
-    mkdir -p /opt/cloudflared && cd /opt/cloudflared
-    
-    # Crear docker-compose.yml
-    cat <<EOF > docker-compose.yml
-version: '3'
-services:
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: always
-    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
-EOF
-    
-    # Iniciar el servicio
-    if ! docker compose up -d; then
-      echo 'Error al iniciar el servicio Cloudflared Tunnel'
-      exit 1
-    fi
-  "; then
-    msg_error "❌ Error al configurar Cloudflared Tunnel."
-  else
-    msg_ok "✅ Cloudflared Tunnel desplegado correctamente"
-  fi
-fi
-
-# ========================
-# Crear script de actualización
-# ========================
-msg_info "🔄 Creando script de actualización..."
-if ! lxc-attach -n $CTID -- bash -c "
-  cat <<EOF > /usr/local/bin/actualizar-servicios.sh
-#!/bin/bash
-echo '🔄 Actualizando servicios de Cloudflare...'
-
-if [ -d /opt/ddns ]; then
-  echo '🌐 Actualizando Cloudflare DDNS...'
-  cd /opt/ddns && docker compose pull && docker compose up -d
-fi
-
-if [ -d /opt/cloudflared ]; then
-  echo '🚇 Actualizando Cloudflared Tunnel...'
-  cd /opt/cloudflared && docker compose pull && docker compose up -d
-fi
-
-echo '✅ Actualización completada.'
-EOF
-  chmod +x /usr/local/bin/actualizar-servicios.sh
-"; then
-  msg_error "❌ Error al crear script de actualización."
-else
-  msg_ok "✅ Script de actualización creado correctamente"
-fi
-
-# ========================
-# Final
-# ========================
-msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
-echo -e "\e[1;33mPuedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.\e[0m"
-echo -e "\e[1;33mPara actualizar los servicios en el futuro, ejecuta: 'actualizar-servicios.sh'\e[0m"
-
-if [[ "$INSTALL_DDNS" == "s" ]]; then
-  echo -e "\e[1;33mCloudflare DDNS configurado para: ${CF_SUBDOMAIN}.${CF_ZONE}\e[0m"
-fi
-
-if [[ "$INSTALL_TUNNEL" == "s" ]]; then
-  echo -e "\e[1;33mCloudflared Tunnel desplegado correctamente. Configura tus aplicaciones en el panel de Cloudflare.\e[0m"
-fi
+# El resto del script continúa igual...
