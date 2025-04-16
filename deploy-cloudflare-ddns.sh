@@ -14,21 +14,12 @@ msg_ok() {
   echo -e "\e[1;32m[OK]\e[0m $1"
 }
 
-# Colores informativos
-INFO="\e[36m"
-YW="\e[33m"
-CL="\e[0m"
-
 # ========================
-# Variables principales
+# Variables
 # ========================
-APP="Cloudflare-DDNS / Cloudflared Tunnel"
-var_cpu="1"
-var_ram="512"
-var_disk="2"
-var_os="debian"
-var_version="12"
-var_unprivileged="1"
+APP="Cloudflare DDNS + Tunnel (Alpine)"
+TEMPLATE="alpine-3.19-standard_20240106_amd64.tar.xz"
+ROOT_PASSWORD=""
 
 header_info "$APP"
 
@@ -55,66 +46,51 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Usar almacenamiento tipo directorio
-# ========================
-DETECTED_STORAGE="local"
-
-# ========================
 # Descargar plantilla si no existe
 # ========================
-TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
 if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]]; then
   pveam update
   pveam download local ${TEMPLATE}
 fi
 
 # ========================
-# Obtener CTID automáticamente o manualmente
+# Crear contenedor LXC Alpine
 # ========================
-CTID=$(pvesh get /cluster/nextid 2>/dev/null || echo "")
+CTID=$(pvesh get /cluster/nextid)
 
-if [[ -z "$CTID" ]]; then
-  read -rp "❓ No se pudo detectar el CTID automáticamente. Ingresa uno manualmente (ej: 120): " CTID
-fi
-
-# ========================
-# Crear contenedor automáticamente (con almacenamiento local)
-# ========================
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
-  -rootfs ${DETECTED_STORAGE}:${var_disk} \
-  -memory ${var_ram} \
-  -cores ${var_cpu} \
+  -rootfs local:2 \
+  -memory 512 \
+  -cores 1 \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
-  -unprivileged ${var_unprivileged} \
+  -nameserver 1.1.1.1 \
   -features nesting=1 \
+  -unprivileged 1 \
   -onboot 1
 
-
 pct start $CTID
-sleep 5
+sleep 3
 
 # ========================
-# Asignar contraseña root
+# Establecer contraseña root
 # ========================
-lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
+lxc-attach -n $CTID -- sh -c "echo root:$ROOT_PASSWORD | chpasswd"
 
 # ========================
 # Instalar Docker
 # ========================
-lxc-attach -n $CTID -- bash -c "
-  apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
-  apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+lxc-attach -n $CTID -- sh -c "
+  apk update && apk add docker
+  rc-update add docker boot
+  service docker start
 "
 
 # ========================
-# Instalar Cloudflare DDNS
+# Lanzar DDNS
 # ========================
 if [[ "$INSTALL_DDNS" == "s" ]]; then
-  lxc-attach -n $CTID -- bash -c "
+  lxc-attach -n $CTID -- sh -c "
     mkdir -p /opt/ddns && cd /opt/ddns
     cat <<EOF > docker-compose.yml
 version: '3'
@@ -134,10 +110,10 @@ EOF
 fi
 
 # ========================
-# Instalar Cloudflared Tunnel
+# Lanzar Tunnel
 # ========================
 if [[ "$INSTALL_TUNNEL" == "s" ]]; then
-  lxc-attach -n $CTID -- bash -c "
+  lxc-attach -n $CTID -- sh -c "
     docker run -d --name cloudflared \
       cloudflare/cloudflared:latest tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
   "
@@ -147,5 +123,5 @@ fi
 # ========================
 # Final
 # ========================
-msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
-echo -e "${INFO}${YW} Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.${CL}"
+msg_ok "🎉 Contenedor Alpine LXC #$CTID desplegado correctamente."
+echo -e "\nℹ️ Puedes acceder con: pct enter $CTID"
