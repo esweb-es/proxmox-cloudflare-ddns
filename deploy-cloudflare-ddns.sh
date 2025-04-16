@@ -1,5 +1,27 @@
 #!/usr/bin/env bash
-source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+set -euo pipefail
+
+# ========================
+# Funciones locales
+# ========================
+header_info() {
+  echo -e "\n\e[1;34m==============================\e[0m"
+  echo -e "\e[1;34m  $1\e[0m"
+  echo -e "\e[1;34m==============================\e[0m"
+}
+
+msg_ok() {
+  echo -e "\e[1;32m[OK]\e[0m $1"
+}
+
+# Colores informativos
+INFO="\e[36m"
+YW="\e[33m"
+CL="\e[0m"
+
+# ========================
+# Variables principales
+# ========================
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
 var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
@@ -10,9 +32,6 @@ var_version="12"
 var_unprivileged="1"
 
 header_info "$APP"
-variables
-color
-catch_errors
 
 # ========================
 # Preguntas condicionales
@@ -62,7 +81,7 @@ pct create $CTID local:vztmpl/${TEMPLATE} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
   -unprivileged ${var_unprivileged} \
-  -features nesting=1
+  -features nesting=1 \
   -onboot 1
 
 pct start $CTID
