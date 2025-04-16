@@ -70,9 +70,17 @@ if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]]; then
 fi
 
 # ========================
+# Obtener CTID automáticamente o manualmente
+# ========================
+CTID=$(pvesh get /cluster/nextid 2>/dev/null || echo "")
+
+if [[ -z "$CTID" ]]; then
+  read -rp "❓ No se pudo detectar el CTID automáticamente. Ingresa uno manualmente (ej: 120): " CTID
+fi
+
+# ========================
 # Crear contenedor automáticamente
 # ========================
-CTID=$(pvesh get /cluster/nextid)
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
   -storage ${DETECTED_STORAGE} \
