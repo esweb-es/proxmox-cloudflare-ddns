@@ -37,7 +37,7 @@ header_info "$APP"
 # Preguntas condicionales
 # ========================
 read -rp "❓ ¿Quieres instalar Cloudflare DDNS? [s/n]: " INSTALL_DDNS
-INSTALL_DDNS=${INSTALL_DDNS,,} # minúsculas
+INSTALL_DDNS=${INSTALL_DDNS,,}
 
 if [[ "$INSTALL_DDNS" == "s" ]]; then
   read -rp "🔐 Ingresa tu API Key de Cloudflare: " CF_API_KEY
@@ -56,9 +56,9 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Fijar storage directamente
+# Cambiar a almacenamiento local (tipo directorio)
 # ========================
-DETECTED_STORAGE="local-lvm"
+DETECTED_STORAGE="local"
 
 # ========================
 # Descargar plantilla si no existe
@@ -84,7 +84,7 @@ fi
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
   -storage ${DETECTED_STORAGE} \
-  -rootfs ${DETECTED_STORAGE}:${var_disk} \
+  -rootfs ${var_disk}G \
   -memory ${var_ram} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
