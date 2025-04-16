@@ -23,7 +23,6 @@ CL="\e[0m"
 # Variables principales
 # ========================
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
-var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
 var_ram="512"
 var_disk="2"
@@ -56,7 +55,7 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Cambiar a almacenamiento local (tipo directorio)
+# Usar almacenamiento tipo directorio
 # ========================
 DETECTED_STORAGE="local"
 
@@ -79,18 +78,18 @@ if [[ -z "$CTID" ]]; then
 fi
 
 # ========================
-# Crear contenedor automáticamente
+# Crear contenedor automáticamente (con almacenamiento local)
 # ========================
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
-  -storage ${DETECTED_STORAGE} \
-  -rootfs ${DETECTED_STORAGE}:${var_disk} \
+  -rootfs ${var_disk}G \
   -memory ${var_ram} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
   -unprivileged ${var_unprivileged} \
   -features nesting=1 \
-  -onboot 1
+  -onboot 1 \
+  -storage ${DETECTED_STORAGE}
 
 pct start $CTID
 sleep 5
