@@ -53,7 +53,6 @@ fi
 # ========================
 # Crear contenedor automáticamente
 # ========================
-CTID=$(pvesh get /cluster/nextid)
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
   -storage ${DETECTED_STORAGE} \
@@ -62,7 +61,8 @@ pct create $CTID local:vztmpl/${TEMPLATE} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
   -unprivileged ${var_unprivileged} \
-  -features nesting=1
+  -features nesting=1 \
+  -onboot 1
 
 pct start $CTID
 sleep 5
