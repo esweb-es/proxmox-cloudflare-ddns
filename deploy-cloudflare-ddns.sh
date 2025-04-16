@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
+
 source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
 var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
@@ -37,24 +39,24 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Fijar storage directamente
+# Fijar storage directamente a 'local'
 # ========================
-DETECTED_STORAGE="local-lvm"
+DETECTED_STORAGE="local"
 
 # ========================
 # Descargar plantilla si no existe
 # ========================
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
-if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]]; then
+if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" && ! -f "/var/lib/pve/local/template/cache/${TEMPLATE}" ]]; then
   pveam update
-  pveam download local ${TEMPLATE}
+  pveam download ${DETECTED_STORAGE} ${TEMPLATE}
 fi
 
 # ========================
 # Crear contenedor automáticamente
 # ========================
 CTID=$(pvesh get /cluster/nextid)
-pct create $CTID local:vztmpl/${TEMPLATE} \
+pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
   -storage ${DETECTED_STORAGE} \
   -rootfs ${DETECTED_STORAGE}:${var_disk} \
