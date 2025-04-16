@@ -1,52 +1,58 @@
 #!/bin/bash
 
 # ================================================
-# Configuración inicial
+# CONFIGURACIÓN INICIAL
 # ================================================
 set -euo pipefail
 
-# ================================================
-# Variables de configuración
-# ================================================
-CT_ID=101
-HOSTNAME="wg-easy"
-STORAGE="local"
-TEMPLATE="debian-12-standard_12.2-1_amd64.tar.zst"
-MEMORY=512
-DISK_SIZE=4G
-BRIDGE="vmbr0"
-IP="dhcp"  # o puedes usar "192.168.1.100/24"
-GATEWAY="192.168.1.1"  # solo si usas IP estática
+read -p "🆔 Ingresa el ID del contenedor LXC: " CT_ID
+read -p "💾 Almacenamiento (local o local-lvm): " STORAGE
+read -p "🌐 ¿Usar IP estática? (s/n): " STATIC_IP
+
+if [[ "$STATIC_IP" == "s" ]]; then
+    read -p "📍 IP estática (ej: 192.168.1.100/24): " IP
+    read -p "🚪 Gateway (ej: 192.168.1.1): " GATEWAY
+else
+    IP="dhcp"
+    GATEWAY=""
+fi
+
+read -p "🔐 Ingresa la contraseña que tendrá el usuario root del contenedor: " -s ROOT_PASS
+echo
+
+TEMPLATE_NAME="debian-12-standard_12.2-1_amd64.tar.zst"
 
 # ================================================
-# Verificar si la plantilla existe y descargarla si no
+# VERIFICAR Y DESCARGAR LA PLANTILLA SI FALTA
 # ================================================
-echo "🔍 Verificando si la plantilla '$TEMPLATE' está disponible en '$STORAGE'..."
-if ! pct templates | grep -q "$TEMPLATE"; then
-    echo "📥 Plantilla no encontrada. Descargando..."
-    pveam download "$STORAGE" "$TEMPLATE"
-    echo "✅ Plantilla descargada con éxito."
+echo "🔍 Verificando plantilla $TEMPLATE_NAME en $STORAGE..."
+if ! ls "/var/lib/pve/local/template/cache/$TEMPLATE_NAME" &>/dev/null && ! ls "/var/lib/vz/template/cache/$TEMPLATE_NAME" &>/dev/null; then
+    echo "📥 Descargando plantilla..."
+    pveam update
+    pveam download "$STORAGE" "$TEMPLATE_NAME"
 else
-    echo "✅ Plantilla ya disponible en '$STORAGE'."
+    echo "✅ Plantilla ya disponible."
 fi
 
 # ================================================
-# Crear el contenedor LXC
+# CREACIÓN DEL CONTENEDOR
 # ================================================
-echo "⚙️  Creando contenedor LXC con ID $CT_ID..."
-pct create "$CT_ID" "/var/lib/vz/template/cache/$TEMPLATE" \
-  -hostname "$HOSTNAME" \
-  -storage "$STORAGE" \
-  -memory "$MEMORY" \
-  -rootfs "${STORAGE}:${DISK_SIZE}" \
-  -net0 name=eth0,bridge=${BRIDGE},ip=${IP}$( [ "$IP" != "dhcp" ] && echo ",gw=${GATEWAY}" ) \
-  -features nesting=1 \
-  -unprivileged 1
+echo "⚙️  Creando contenedor..."
+pct create "$CT_ID" \
+    /var/lib/pve/template/cache/$TEMPLATE_NAME \
+    -storage "$STORAGE" \
+    -hostname wg-easy \
+    -memory 512 \
+    -cores 1 \
+    -net0 name=eth0,bridge=vmbr0,ip=$IP$( [ "$IP" != "dhcp" ] && echo ",gw=$GATEWAY" ) \
+    -rootfs "$STORAGE":4G \
+    -password "$ROOT_PASS" \
+    -features nesting=1 \
+    -unprivileged 1
 
-echo "✅ Contenedor creado exitosamente."
-
 # ================================================
-# Iniciar el contenedor
+# INICIAR EL CONTENEDOR
 # ================================================
+echo "🚀 Iniciando contenedor..."
 pct start "$CT_ID"
-echo "🚀 Contenedor iniciado. Puedes acceder con: pct enter $CT_ID"
+echo "✅ Contenedor $CT_ID creado e iniciado con éxito."
