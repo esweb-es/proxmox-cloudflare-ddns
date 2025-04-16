@@ -1,55 +1,87 @@
-Cloudflare Stack (DDNS + Tunnel Zero Trust)
+# 🌩️ Cloudflare Stack (DDNS + Tunnel Zero Trust)
 
-🌩️ ¿Qué incluye este stack?
-Este proyecto despliega en Proxmox un contenedor LXC Debian súper liviano con Docker y dos servicios:
+Este proyecto despliega en **Proxmox** un contenedor **LXC Debian minimalista** con **Docker** preinstalado y dos servicios de Cloudflare:
 
-oznu/cloudflare-ddns: actualiza automáticamente la IP pública de tu dominio/subdominio.
-cloudflared: crea túneles seguros a través de Cloudflare Tunnel (ideal para acceder remotamente a servicios internos).
+- [`oznu/cloudflare-ddns`](https://hub.docker.com/r/oznu/cloudflare-ddns): actualiza automáticamente la IP pública de tu dominio/subdominio.
+- [`cloudflare/cloudflared`](https://hub.docker.com/r/cloudflare/cloudflared): crea túneles seguros con Cloudflare Tunnel (ideal para acceder remotamente a servicios internos).
 
-** 🔐 Crear API Token para DDNS **
+---
 
-Accede al panel de Cloudflare.
-1. Haz clic en tu ícono de perfil (arriba a la derecha).
-2. Selecciona "Mi perfil".
-3. Ve a "Tokens de API" (menú izquierdo).
-4. Haz clic en "Crear token".
-5. Baja hasta la plantilla "Editar zona DNS" y haz clic en "Usar plantilla".
-6. En Permisos, configura lo siguiente:
+## 🔐 1. Crear API Token para Cloudflare DDNS
+
+1. Accede al [panel de Cloudflare](https://dash.cloudflare.com).
+2. Haz clic en tu ícono de perfil (arriba a la derecha) → **"Mi perfil"**.
+3. Ve a la pestaña **"Tokens de API"**.
+4. Haz clic en **"Crear token"**.
+5. Desplázate hasta la plantilla **"Editar zona DNS"** y haz clic en **"Usar plantilla"**.
+6. En la sección **Permisos**, configura lo siguiente:
 
 ZONA → CONFIGURACIÓN DE ZONA → LEER
 ZONA → ZONA → LEER
 ZONA → DNS → EDITAR
 
-7. En "Recursos de zona", selecciona:
 
-INCLUIR → TODAS LAS ZONAS
+7. En **"Recursos de zona"**, selecciona:
+8. Haz clic en **"Continuar hasta resumen"**, revisa y crea el token.
+9. **Copia el token** y guárdalo en un lugar seguro.
 
-8. Haz clic en "Continuar hasta resumen", revisa y crea el token.
-9. Copia el token y guárdalo en un lugar seguro.
+---
 
-** 🔐 Crear API Token para Cloudflared Tunnel **
+## 🛡️ 2. Crear Token para Cloudflared Tunnel
 
-1. Desde el panel de Cloudflare, ve a Zero Trust Dashboard:
-https://dash.teams.cloudflare.com/
-2. En el menú lateral ve a Access → Tunnels.
-3. Crea un túnel nuevo, colocale el nombre que desees.
-4. En configurar, ve a la pestaña docker y copia y guarda el conector en un lugar seguro.
+1. Accede al [Cloudflare Zero Trust Dashboard](https://dash.teams.cloudflare.com/).
+2. En el menú lateral, ve a **Access → Tunnels**.
+3. Crea un túnel nuevo y asígnale el nombre que desees.
+4. En la sección de configuración, selecciona la pestaña **Docker**.
+5. **Copia el comando que aparece**. Contiene el token de conexión.
 
-Ejemplo de conector:
-docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token eyJhIjoiYTNmNDZiYWIzMDccNTRlODE2ODg0Zjc0YmIwZjFkZmYiLCJ0IjoiZGNmMDBkNLEtZDU0ZC00MjFjLTkxZTAtOTNlM2VkNTU4NTUyIiwicyI69k1UbGxaakkwTWpBdFpqVTRaUzAwWkRreUxUaGlaR0l0WVdSaU16ZzFaV1U033RRNSJ9
+**Ejemplo:**
 
-** ⚙️ 3. Desplegar el stack en tu nodo Proxmox **
+```bash
+docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token eyJhIjoiYTNmlDZiYWIzMDczNTRrODE2ODg0Zqc0YmIwZjFkZrYsLCJ0IjoiYWJkN2ZiZjAtMGFlYS00Yjg1LWJkZWMtNjNlMzEzYjg4MmVjIiwicyInIk4yUTVNR00wTnpFdFpEZzFZeTAwT0dOaUxXSmhZell0TVRNMVlrUXlOVE5rlTJNeCJ9
+```
 
-1. Ejecuta este comando desde la shell del nodo:
+6. Guarda ese token de forma segura. Lo necesitarás durante la instalación.
 
-    bash <(curl -s https://raw.githubusercontent.com/esweb-es/proxmox-cloudflare-ddns/main/deploy-cloudflare-ddns.sh)
-    
-2. Este script creará un contenedor LXC Debian muy ligero, instalará Docker y lanzará los contenedores de:
+## ⚙️ 3. Desplegar el Stack en Proxmox
 
-oznu/cloudflare-ddns
-ghcr.io/cloudflare/cloudflared
+### ✅ Requisitos
 
-📂 Estructura esperada en el contenedor:
+- Nodo Proxmox con acceso a Internet.
+- Al menos **2 GB** de espacio libre en el almacenamiento `local`.
 
-/opt/ddns/docker-compose.yml   ← Configuración de oznu/cloudflare-ddns
-/opt/cloudflared/docker-compose.yml   ← Configuración del túnel 
+### 🧪 Instalación automática
+
+Ejecuta el siguiente comando desde la **shell del nodo Proxmox**:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/esweb-es/proxmox-cloudflare-ddns/main/deploy-cloudflare-ddns.sh)
+```
+
+Este script:
+
+- Crea un contenedor LXC Debian liviano.
+- Instala Docker y docker-compose plugin.
+- Lanza los siguientes servicios según tu elección:
+  - `oznu/cloudflare-ddns`
+  - `cloudflare/cloudflared`
+
+---
+
+## 📂 Estructura esperada en el contenedor
+
+```bash
+/opt/ddns/docker-compose.yml          # Configuración del servicio oznu/cloudflare-ddns
+/opt/cloudflared/docker-compose.yml   # (Opcional) Configuración del túnel si deseas adaptarlo a docker-compose
+```
+
+> ☝️ Nota: por defecto, `cloudflared` se ejecuta con `docker run`, pero puedes convertirlo fácilmente a `docker-compose` si prefieres mantener todo organizado.
+
+---
+
+## 🧾 Créditos y Licencia
+
+- Proyecto mantenido por [@esweb-es](https://github.com/esweb-es)
+- Basado en imágenes oficiales de:
+  - [Cloudflare](https://developers.cloudflare.com/)
+  - [oznu/cloudflare-ddns](https://hub.docker.com/r/oznu/cloudflare-ddns)
