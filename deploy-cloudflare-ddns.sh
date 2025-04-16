@@ -84,7 +84,7 @@ fi
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
   -storage ${DETECTED_STORAGE} \
-  -rootfs ${var_disk}G \
+  -rootfs ${DETECTED_STORAGE}:${var_disk} \
   -memory ${var_ram} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
