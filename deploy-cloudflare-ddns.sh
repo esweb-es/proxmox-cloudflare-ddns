@@ -82,14 +82,14 @@ fi
 # ========================
 pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
-  -rootfs ${var_disk}G \
+  -rootfs ${DETECTED_STORAGE}:${var_disk} \
   -memory ${var_ram} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
   -unprivileged ${var_unprivileged} \
   -features nesting=1 \
-  -onboot 1 \
-  -storage ${DETECTED_STORAGE}
+  -onboot 1
+
 
 pct start $CTID
 sleep 5
