@@ -1,62 +1,20 @@
 #!/usr/bin/env bash
 
-# ========================
-# Funciones de utilidad
-# ========================
-function msg_info() {
-  local msg="$1"
-  echo -e "\e[1;34m${msg}\e[0m"
-}
+source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
 
-function msg_ok() {
-  local msg="$1"
-  echo -e "\e[1;32m${msg}\e[0m"
-}
-
-function msg_error() {
-  local msg="$1"
-  echo -e "\e[1;31m${msg}\e[0m"
-}
-
-function catch_errors() {
-  set -e
-  trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
-  trap 'if [ $? -ne 0 ]; then echo -e "\e[1;31mERROR: El comando \"${last_command}\" falló con código de salida $?.\e[0m"; fi' EXIT
-}
-
-# ========================
-# Configuración inicial
-# ========================
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
+var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
 var_ram="512"
 var_disk="2"
+var_os="debian"
+var_version="12"
 var_unprivileged="1"
 
-# Iniciar captura de errores
+header_info "$APP"
+variables
+color
 catch_errors
-
-# ========================
-# Cabecera
-# ========================
-clear
-echo -e "\e[1;33m"
-echo "  ___ _                 _  __ _                 "
-echo " / __| |___  _  _ __| |/ _| |__ _ _ _ ___    "
-echo "| (__| / _ \| || |/ _  |  _| / _\` | '_/ -_)   "
-echo " \___|_\___/ \_,_|___|_|_| |_\__,_|_| \___|   "
-echo "                                              "
-echo -e "\e[1;32mInstalador de Cloudflare DDNS y Cloudflared Tunnel\e[0m"
-echo -e "\e[1;34m--------------------------------------------\e[0m"
-echo ""
-
-# ========================
-# Verificar si es root
-# ========================
-if [ "$(id -u)" -ne 0 ]; then
-  msg_error "❌ Este script debe ejecutarse como root"
-  exit 1
-fi
 
 # ========================
 # Preguntas condicionales
@@ -81,74 +39,88 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Selección de almacenamiento
+# Usar almacenamiento 'local'
 # ========================
-read -rp "🖴 Ingresa el storage de Proxmox a usar [local]: " DETECTED_STORAGE
-DETECTED_STORAGE=${DETECTED_STORAGE:-local}
-
-# Verificar si el storage existe
-if ! pvesm status 2>/dev/null | grep -q "^${DETECTED_STORAGE}"; then
-  msg_error "❌ El storage '${DETECTED_STORAGE}' no existe en Proxmox o el comando pvesm no está disponible"
-  read -rp "🖴 Ingresa un storage válido de Proxmox (o presiona Enter para usar 'local'): " DETECTED_STORAGE
-  DETECTED_STORAGE=${DETECTED_STORAGE:-local}
-fi
+DETECTED_STORAGE="local"
 
 # ========================
 # Descargar plantilla si no existe
 # ========================
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
-TEMPLATE_PATH="/var/lib/vz/template/cache/${TEMPLATE}"
-TEMPLATE_PATH_ALT="/var/lib/pve/local/template/cache/${TEMPLATE}"
-
-if [[ ! -f "$TEMPLATE_PATH" && ! -f "$TEMPLATE_PATH_ALT" ]]; then
-  msg_info "📥 Descargando plantilla Debian 12..."
-  if command -v pveam >/dev/null 2>&1; then
-    pveam update
-    if ! pveam download ${DETECTED_STORAGE} ${TEMPLATE}; then
-      msg_error "❌ Error al descargar la plantilla. Abortando."
-      exit 1
-    fi
-  else
-    msg_error "❌ El comando pveam no está disponible. Verifica que estás en un servidor Proxmox."
-    exit 1
-  fi
+if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" && ! -f "/var/lib/pve/local/template/cache/${TEMPLATE}" ]]; then
+  pveam update
+  pveam download ${DETECTED_STORAGE} ${TEMPLATE}
 fi
 
 # ========================
 # Crear contenedor automáticamente
 # ========================
-if command -v pvesh >/dev/null 2>&1; then
-  CTID=$(pvesh get /cluster/nextid)
-else
-  msg_error "❌ El comando pvesh no está disponible. Verifica que estás en un servidor Proxmox."
-  read -rp "🔢 Ingresa manualmente el ID del contenedor a crear: " CTID
-  if [[ -z "$CTID" ]]; then
-    msg_error "❌ No se proporcionó un ID de contenedor. Abortando."
-    exit 1
-  fi
+CTID=$(pvesh get /cluster/nextid)
+pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
+  -hostname cloudflare-stack \
+  -rootfs ${DETECTED_STORAGE}:${var_disk} \
+  -storage ${DETECTED_STORAGE} \
+  -memory ${var_ram} \
+  -cores ${var_cpu} \
+  -net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  -unprivileged ${var_unprivileged} \
+  -features nesting=1
+
+pct start $CTID
+sleep 5
+
+# ========================
+# Asignar contraseña root
+# ========================
+lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
+
+# ========================
+# Instalar Docker
+# ========================
+lxc-attach -n $CTID -- bash -c "
+  apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
+  apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+"
+
+# ========================
+# Instalar Cloudflare DDNS
+# ========================
+if [[ "$INSTALL_DDNS" == "s" ]]; then
+  lxc-attach -n $CTID -- bash -c "
+    mkdir -p /opt/ddns && cd /opt/ddns
+    cat <<EOF > docker-compose.yml
+version: '3'
+services:
+  cloudflare-ddns:
+    image: oznu/cloudflare-ddns:latest
+    restart: always
+    environment:
+      - API_KEY=${CF_API_KEY}
+      - ZONE=${CF_ZONE}
+      - SUBDOMAIN=${CF_SUBDOMAIN}
+      - PROXIED=false
+EOF
+    docker compose up -d
+  "
+  msg_ok "✅ Cloudflare DDNS desplegado correctamente"
 fi
 
-msg_info "🔨 Creando contenedor LXC #${CTID}..."
-
-if command -v pct >/dev/null 2>&1; then
-  if ! pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
-    -hostname cloudflare-stack \
-    -storage ${DETECTED_STORAGE} \
-    -rootfs ${DETECTED_STORAGE}:${var_disk} \
-    -memory ${var_ram} \
-    -cores ${var_cpu} \
-    -net0 name=eth0,bridge=vmbr0,ip=dhcp \
-    -unprivileged ${var_unprivileged} \
-    -features nesting=1; then
-    
-    msg_error "❌ Error al crear el contenedor. Abortando."
-    exit 1
-  fi
-else
-  msg_error "❌ El comando pct no está disponible. Verifica que estás en un servidor Proxmox."
-  exit 1
+# ========================
+# Instalar Cloudflared Tunnel
+# ========================
+if [[ "$INSTALL_TUNNEL" == "s" ]]; then
+  lxc-attach -n $CTID -- bash -c "
+    docker run -d --name cloudflared \
+      cloudflare/cloudflared:latest tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+  "
+  msg_ok "✅ Cloudflared Tunnel desplegado correctamente"
 fi
 
-msg_ok "✅ Contenedor LXC #${CTID} creado correctamente"
-
-# El resto del script continúa igual...
+# ========================
+# Final
+# ========================
+msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
+echo -e "${INFO}${YW} Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.${CL}"
