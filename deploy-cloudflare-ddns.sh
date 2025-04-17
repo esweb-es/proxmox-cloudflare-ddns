@@ -20,7 +20,7 @@ catch_errors
 # Preguntas condicionales
 # ========================
 read -rp "❓ ¿Quieres instalar Cloudflare DDNS? [s/n]: " INSTALL_DDNS
-INSTALL_DDNS=${INSTALL_DDNS,,} # minúsculas
+INSTALL_DDNS=${INSTALL_DDNS,,}
 
 if [[ "$INSTALL_DDNS" == "s" ]]; then
   read -rp "🔐 Ingresa tu API Key de Cloudflare: " CF_API_KEY
@@ -39,27 +39,24 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Usar almacenamiento 'local'
-# ========================
-DETECTED_STORAGE="local-lvm"
-
-# ========================
-# Descargar plantilla si no existe
+# Usar almacenamiento 'local-lvm' y plantilla desde 'local'
 # ========================
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
+DETECTED_STORAGE="local-lvm"
+
+# Asegura que la plantilla esté en 'local'
 if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" && ! -f "/var/lib/pve/local/template/cache/${TEMPLATE}" ]]; then
   pveam update
-  pveam download ${DETECTED_STORAGE} ${TEMPLATE}
+  pveam download local ${TEMPLATE}
 fi
 
 # ========================
 # Crear contenedor automáticamente
 # ========================
 CTID=$(pvesh get /cluster/nextid)
-pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
-  -hostname cloudflare-stack \
+pct create $CTID local:vztmpl/${TEMPLATE} \
   -rootfs ${DETECTED_STORAGE}:${var_disk} \
-  -storage ${DETECTED_STORAGE} \
+  -hostname cloudflare-stack \
   -memory ${var_ram} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
