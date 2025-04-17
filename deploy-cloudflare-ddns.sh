@@ -2,44 +2,41 @@
 set -euo pipefail
 
 # ================================================
-# CONFIGURACIÓN INICIAL
+# Pide datos
 # ================================================
-echo "=== Cloudflare DDNS + Tunnel en LXC (Docker) ==="
-
-read -rp "🔐 API Token de Cloudflare (DDNS, Zone.DNS Edit): " CF_API_TOKEN
-read -rp "🌐 Dominio o subdominio a actualizar (ej: casa.midominio.com): " CF_RECORD_NAME
-read -rp "🔒 Tunnel Token de Cloudflare Zero Trust: " CF_TUNNEL_TOKEN
-read -rp "🔑 Contraseña del contenedor: " CT_PASSWORD
+read -rp "🔐 API Token de Cloudflare (Zone.DNS Edit): " CF_API_TOKEN
+read -rp "🌍 Subdominio a actualizar (ej: casa.tudominio.com): " CF_RECORD_NAME
+read -rp "🛡️ Token del túnel (Cloudflared Tunnel Token): " CF_TUNNEL_TOKEN
+read -rp "🔑 Contraseña root del contenedor: " CT_PASSWORD
 
 # ================================================
-# PARÁMETROS DEL CONTENEDOR
+# Parámetros del contenedor
 # ================================================
 CT_ID=120
-CT_NAME=cloudflare
-STORAGE=local
-TEMPLATE="debian-12-standard_12.0-1_amd64.tar.zst"
-IP_TYPE="dhcp"
+HOSTNAME="cloudflare"
+STORAGE="local"
+IP_CONFIG="dhcp"
+TEMPLATE=$(pveam available | grep debian-12 | grep standard | tail -n1 | awk '{print $1}')
 
 # ================================================
-# CREAR CONTENEDOR
+# Crear contenedor
 # ================================================
-echo "🛠️ Creando contenedor LXC..."
-pveam update
-TAR=$(pveam available | grep "$TEMPLATE" | tail -n1 | awk '{print $1}')
-pct create $CT_ID $TAR \
-  -storage $STORAGE \
-  -hostname $CT_NAME \
-  -net0 name=eth0,bridge=vmbr0,ip=$IP_TYPE \
+echo "📦 Creando contenedor #$CT_ID..."
+pveam download local $TEMPLATE
+pct create $CT_ID local:vztmpl/$TEMPLATE \
+  -hostname $HOSTNAME \
+  -net0 name=eth0,bridge=vmbr0,ip=$IP_CONFIG \
   -cores 1 -memory 512 \
   -features nesting=1 \
   -unprivileged 1 \
-  -password "$CT_PASSWORD"
+  -password "$CT_PASSWORD" \
+  -storage $STORAGE
 
 pct start $CT_ID
 sleep 5
 
 # ================================================
-# INSTALAR DOCKER
+# Instalar Docker
 # ================================================
 echo "🐳 Instalando Docker..."
 pct exec $CT_ID -- bash -c "
@@ -54,9 +51,9 @@ apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 "
 
 # ================================================
-# CREAR docker-compose.yml
+# Crear docker-compose.yml
 # ================================================
-echo "📦 Generando docker-compose.yml..."
+echo "📝 Generando docker-compose.yml..."
 pct exec $CT_ID -- mkdir -p /opt/cloudflare
 
 pct exec $CT_ID -- bash -c "cat > /opt/cloudflare/docker-compose.yml" <<EOF
@@ -78,9 +75,9 @@ services:
 EOF
 
 # ================================================
-# INICIAR SERVICIOS
+# Iniciar los servicios
 # ================================================
-echo "🚀 Iniciando servicios..."
+echo "🚀 Iniciando servicios Docker..."
 pct exec $CT_ID -- docker compose -f /opt/cloudflare/docker-compose.yml up -d
 
-echo "✅ ¡Contenedor $CT_ID con DDNS y Tunnel funcionando!"
+echo -e "\n✅ Contenedor #$CT_ID desplegado con Cloudflare DDNS y Tunnel funcionando."
