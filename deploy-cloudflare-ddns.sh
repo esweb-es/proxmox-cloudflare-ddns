@@ -8,7 +8,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 echo "📝 Iniciando instalación. Log guardado en: $LOG_FILE"
 
 # ========================
-# Implementación de funciones necesarias (reemplazando las funciones externas)
+# Implementación de funciones necesarias
 # ========================
 msg_info() {
   echo -e "\e[1;34m[INFO]\e[0m $1"
@@ -99,6 +99,39 @@ echo "===================="
 check_requirements
 
 # ========================
+# Detectar almacenamiento compatible
+# ========================
+echo "🔍 Detectando almacenamiento compatible con contenedores LXC..."
+
+# Intentar detectar automáticamente un almacenamiento compatible
+DETECTED_STORAGE=$(pvesm status | grep -E 'active.*yes' | grep -E 'content.*rootdir' | head -n1 | awk '{print $1}')
+
+if [[ -z "$DETECTED_STORAGE" ]]; then
+  echo "⚠️ No se detectó automáticamente un almacenamiento compatible con contenedores."
+  echo "Mostrando almacenamientos disponibles:"
+  pvesm status
+  
+  read -rp "🔢 Ingresa el nombre del almacenamiento a usar: " DETECTED_STORAGE
+  
+  # Verificar si el almacenamiento existe
+  if ! pvesm status -storage $DETECTED_STORAGE &>/dev/null; then
+    msg_error "El almacenamiento '$DETECTED_STORAGE' no existe"
+  fi
+  
+  # Verificar si el almacenamiento soporta contenedores
+  if ! pvesm status -storage $DETECTED_STORAGE | grep -q "content.*rootdir"; then
+    echo "⚠️ El almacenamiento '$DETECTED_STORAGE' podría no soportar contenedores."
+    read -rp "¿Deseas continuar de todos modos? [s/n]: " CONTINUE
+    if [[ "${CONTINUE,,}" != "s" ]]; then
+      echo "Operación cancelada por el usuario."
+      exit 0
+    fi
+  fi
+fi
+
+echo "💾 Usando almacenamiento: $DETECTED_STORAGE"
+
+# ========================
 # Preguntas condicionales con validación
 # ========================
 read -rp "❓ ¿Quieres instalar Cloudflare DDNS? [s/n]: " INSTALL_DDNS
@@ -179,12 +212,6 @@ while true; do
 done
 
 # ========================
-# Usar almacenamiento 'local'
-# ========================
-DETECTED_STORAGE="local"
-echo "💾 Usando almacenamiento: $DETECTED_STORAGE"
-
-# ========================
 # Descargar plantilla si no existe
 # ========================
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
@@ -207,8 +234,8 @@ echo "🆔 ID del contenedor: $CTID"
 echo "⚙️ Configurando contenedor..."
 pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
-  -rootfs ${DETECTED_STORAGE}:${var_disk} \
   -storage ${DETECTED_STORAGE} \
+  -rootfs ${DETECTED_STORAGE}:${var_disk} \
   -memory ${var_ram} \
   -cores ${var_cpu} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
