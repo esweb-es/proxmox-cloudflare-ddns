@@ -8,6 +8,22 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 echo "📝 Iniciando instalación. Log guardado en: $LOG_FILE"
 
 # ========================
+# Implementación de funciones necesarias (reemplazando las funciones externas)
+# ========================
+msg_info() {
+  echo -e "\e[1;34m[INFO]\e[0m $1"
+}
+
+msg_ok() {
+  echo -e "\e[1;32m[OK]\e[0m $1"
+}
+
+msg_error() {
+  echo -e "\e[1;31m[ERROR]\e[0m $1"
+  exit 1
+}
+
+# ========================
 # Función de limpieza en caso de error
 # ========================
 cleanup() {
@@ -32,20 +48,17 @@ check_requirements() {
   
   # Verificar que se ejecuta como root
   if [[ $EUID -ne 0 ]]; then
-    echo "❌ Error: Este script debe ejecutarse como root"
-    exit 1
+    msg_error "Este script debe ejecutarse como root"
   fi
   
   # Verificar que Proxmox está instalado
   if ! command -v pveversion &> /dev/null; then
-    echo "❌ Error: Proxmox VE no está instalado o no es accesible"
-    exit 1
+    msg_error "Proxmox VE no está instalado o no es accesible"
   fi
   
   # Verificar conectividad a Internet
   if ! ping -c 1 cloudflare.com &> /dev/null; then
-    echo "❌ Error: No hay conexión a Internet"
-    exit 1
+    msg_error "No hay conexión a Internet"
   fi
   
   echo "✅ Todos los requisitos verificados correctamente"
@@ -56,23 +69,14 @@ check_requirements() {
 # ========================
 check_command() {
   if [ $? -ne 0 ]; then
-    echo "❌ Error: Falló el comando: $1"
-    exit 1
+    msg_error "Falló el comando: $1"
   fi
 }
-
-# ========================
-# Cargar funciones de build
-# ========================
-echo "📥 Descargando funciones de build..."
-source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
-check_command "Descarga de funciones de build"
 
 # ========================
 # Configuración de la aplicación
 # ========================
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
-var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
 var_ram="512"
 var_disk="2"
@@ -80,10 +84,14 @@ var_os="debian"
 var_version="12"
 var_unprivileged="1"
 
-header_info "$APP"
-variables
-color
-catch_errors
+echo "🚀 Instalando $APP"
+echo "===================="
+echo "CPU: $var_cpu"
+echo "RAM: $var_ram MB"
+echo "Disco: $var_disk GB"
+echo "OS: $var_os $var_version"
+echo "Unprivileged: $var_unprivileged"
+echo "===================="
 
 # ========================
 # Verificar requisitos
@@ -117,15 +125,25 @@ if [[ "$INSTALL_DDNS" == "s" ]]; then
     fi
   done
   
-  # Validación de subdominio
-  while true; do
-    read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
-    if [[ -z "$CF_SUBDOMAIN" || "$CF_SUBDOMAIN" =~ [^a-zA-Z0-9-] ]]; then
-      echo "⚠️ El subdominio solo debe contener letras, números y guiones."
-    else
-      break
-    fi
-  done
+  # Preguntar si desea usar un subdominio
+  read -rp "❓ ¿Quieres configurar un subdominio específico? [s/n]: " USE_SUBDOMAIN
+  USE_SUBDOMAIN=${USE_SUBDOMAIN,,}
+  
+  if [[ "$USE_SUBDOMAIN" == "s" ]]; then
+    # Validación de subdominio
+    while true; do
+      read -rp "🧩 Ingresa el subdominio (SUBDOMAIN) que quieres usar (ej: casa): " CF_SUBDOMAIN
+      if [[ -z "$CF_SUBDOMAIN" || "$CF_SUBDOMAIN" =~ [^a-zA-Z0-9-] ]]; then
+        echo "⚠️ El subdominio solo debe contener letras, números y guiones."
+      else
+        break
+      fi
+    done
+  else
+    # Si no se usa subdominio, dejarlo vacío
+    CF_SUBDOMAIN=""
+    echo "ℹ️ Se actualizará el dominio principal sin subdominio."
+  fi
 fi
 
 read -rp "❓ ¿Quieres instalar Cloudflared Tunnel? [s/n]: " INSTALL_TUNNEL
@@ -251,7 +269,7 @@ services:
     environment:
       - API_KEY=${CF_API_KEY}
       - ZONE=${CF_ZONE}
-      - SUBDOMAIN=${CF_SUBDOMAIN}
+$(if [[ -n "$CF_SUBDOMAIN" ]]; then echo "      - SUBDOMAIN=${CF_SUBDOMAIN}"; fi)
       - PROXIED=false
 EOF
     docker compose up -d
@@ -266,7 +284,13 @@ EOF
     fi
   "
   check_command "Instalación de Cloudflare DDNS"
-  msg_ok "✅ Cloudflare DDNS desplegado correctamente"
+  
+  # Mensaje informativo sobre la configuración
+  if [[ -n "$CF_SUBDOMAIN" ]]; then
+    msg_ok "Cloudflare DDNS desplegado correctamente para ${CF_SUBDOMAIN}.${CF_ZONE}"
+  else
+    msg_ok "Cloudflare DDNS desplegado correctamente para ${CF_ZONE}"
+  fi
 fi
 
 # ========================
@@ -296,7 +320,7 @@ EOF
     fi
   "
   check_command "Instalación de Cloudflared Tunnel"
-  msg_ok "✅ Cloudflared Tunnel desplegado correctamente"
+  msg_ok "Cloudflared Tunnel desplegado correctamente"
 fi
 
 # ========================
@@ -316,7 +340,7 @@ if [[ "$INSTALL_DDNS" == "s" ]]; then
   cat <<EOF >> "$CONFIG_FILE"
 DDNS_INSTALLED=true
 CF_ZONE=$CF_ZONE
-CF_SUBDOMAIN=$CF_SUBDOMAIN
+$(if [[ -n "$CF_SUBDOMAIN" ]]; then echo "CF_SUBDOMAIN=$CF_SUBDOMAIN"; fi)
 # La API Key no se guarda por seguridad
 EOF
 fi
@@ -361,8 +385,8 @@ fi
 # Final
 # ========================
 msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
-echo -e "${INFO}${YW} Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.${CL}"
-echo -e "${INFO}${YW} Log de instalación guardado en: $LOG_FILE${CL}"
+echo -e "\e[1;33m[INFO]\e[0m Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste."
+echo -e "\e[1;33m[INFO]\e[0m Log de instalación guardado en: $LOG_FILE"
 
 # Desactivar trap al finalizar correctamente
 trap - ERR
