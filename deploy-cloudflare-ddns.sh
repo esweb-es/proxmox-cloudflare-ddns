@@ -41,7 +41,7 @@ echo
 # ========================
 # Usar almacenamiento 'local'
 # ========================
-DETECTED_STORAGE="local"
+DETECTED_STORAGE="local-lvm"
 
 # ========================
 # Descargar plantilla si no existe
