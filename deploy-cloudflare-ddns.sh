@@ -39,22 +39,23 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Almacenamiento y plantilla
+# Configuración de plantillas y almacenamiento
 # ========================
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
 TEMPLATE_STORAGE="local"
 ROOTFS_STORAGE="local-lvm"
 
-# Asegurar que la plantilla esté disponible
+# Asegurar que la plantilla esté descargada
 if [[ ! -f "/var/lib/pve/local/template/cache/${TEMPLATE}" ]]; then
   pveam update
-  pveam download $TEMPLATE_STORAGE ${TEMPLATE}
+  pveam download ${TEMPLATE_STORAGE} ${TEMPLATE}
 fi
 
 # ========================
-# Crear contenedor
+# Crear contenedor automáticamente
 # ========================
 CTID=$(pvesh get /cluster/nextid)
+
 pct create $CTID ${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE} \
   -rootfs ${ROOTFS_STORAGE}:${var_disk} \
   -hostname cloudflare-stack \
