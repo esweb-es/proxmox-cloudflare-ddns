@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 
-source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+# ========================
+# FUNCIONES LOCALES
+# ========================
+header_info() { echo -e "\n🧠 $1\n"; }
+variables() { :; }
+color() { :; }
+catch_errors() { :; }
+msg_ok() { echo -e "✅ $1"; }
 
+# ========================
+# CONFIGURACIÓN INICIAL
+# ========================
 APP="Cloudflare-DDNS / Cloudflared Tunnel"
 var_tags="docker ddns cloudflare cloudflared"
 var_cpu="1"
@@ -17,7 +27,7 @@ color
 catch_errors
 
 # ========================
-# Preguntas condicionales
+# PREGUNTAS INTERACTIVAS
 # ========================
 read -rp "❓ ¿Quieres instalar Cloudflare DDNS? [s/n]: " INSTALL_DDNS
 INSTALL_DDNS=${INSTALL_DDNS,,}
@@ -39,22 +49,24 @@ read -rsp "🔐 Ingresa la contraseña que tendrá el usuario root del contenedo
 echo
 
 # ========================
-# Configuración de plantillas y almacenamiento
+# CONFIGURACIÓN DE PLANTILLA Y ALMACENAMIENTO
 # ========================
 TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
 TEMPLATE_STORAGE="local"
 ROOTFS_STORAGE="local-lvm"
 
-# Asegurar que la plantilla esté descargada
+# Asegurar que la plantilla esté disponible
 if [[ ! -f "/var/lib/pve/local/template/cache/${TEMPLATE}" ]]; then
+  echo "⬇️ Descargando plantilla Debian 12..."
   pveam update
-  pveam download ${TEMPLATE_STORAGE} ${TEMPLATE}
+  pveam download $TEMPLATE_STORAGE $TEMPLATE
 fi
 
 # ========================
-# Crear contenedor automáticamente
+# CREAR CONTENEDOR
 # ========================
 CTID=$(pvesh get /cluster/nextid)
+echo "📦 Creando contenedor LXC ID #$CTID..."
 
 pct create $CTID ${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE} \
   -rootfs ${ROOTFS_STORAGE}:${var_disk} \
@@ -69,25 +81,27 @@ pct start $CTID
 sleep 5
 
 # ========================
-# Asignar contraseña root
+# CONFIGURAR CONTRASEÑA ROOT
 # ========================
 lxc-attach -n $CTID -- bash -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
 # ========================
-# Instalar Docker
+# INSTALAR DOCKER
 # ========================
+echo "🐳 Instalando Docker dentro del contenedor..."
 lxc-attach -n $CTID -- bash -c "
-  apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
-  apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
+apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 "
 
 # ========================
-# Instalar Cloudflare DDNS
+# DESPLEGAR CLOUDFLARE DDNS
 # ========================
 if [[ "$INSTALL_DDNS" == "s" ]]; then
+  echo "🚀 Desplegando Cloudflare DDNS..."
   lxc-attach -n $CTID -- bash -c "
     mkdir -p /opt/ddns && cd /opt/ddns
     cat <<EOF > docker-compose.yml
@@ -103,22 +117,23 @@ services:
 EOF
     docker compose up -d
   "
-  msg_ok "✅ Cloudflare DDNS desplegado correctamente"
+  msg_ok "Cloudflare DDNS desplegado correctamente"
 fi
 
 # ========================
-# Instalar Cloudflared Tunnel
+# DESPLEGAR CLOUDFLARED TUNNEL
 # ========================
 if [[ "$INSTALL_TUNNEL" == "s" ]]; then
+  echo "🚀 Desplegando Cloudflared Tunnel..."
   lxc-attach -n $CTID -- bash -c "
     docker run -d --name cloudflared \
       cloudflare/cloudflared:latest tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
   "
-  msg_ok "✅ Cloudflared Tunnel desplegado correctamente"
+  msg_ok "Cloudflared Tunnel desplegado correctamente"
 fi
 
 # ========================
-# Final
+# FINAL
 # ========================
-msg_ok "🎉 Todo listo. Contenedor LXC #$CTID desplegado correctamente."
-echo -e "${INFO}${YW} Puedes acceder con: 'pct enter $CTID' y usar la contraseña de root que proporcionaste.${CL}"
+msg_ok "🎉 Contenedor LXC #$CTID desplegado correctamente."
+echo -e "\nPuedes acceder con: \e[1mpct enter $CTID\e[0m y usar la contraseña de root que proporcionaste."
