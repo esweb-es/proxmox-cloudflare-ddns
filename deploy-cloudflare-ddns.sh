@@ -220,8 +220,8 @@ if [[ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" && ! -f "/var/lib/pve/local/
   echo "📥 Descargando plantilla $TEMPLATE..."
   pveam update
   check_command "pveam update"
-  pveam download ${DETECTED_STORAGE} ${TEMPLATE}
-  check_command "pveam download ${DETECTED_STORAGE} ${TEMPLATE}"
+  pveam download local ${TEMPLATE}
+  check_command "pveam download local ${TEMPLATE}"
 fi
 
 # ========================
@@ -232,7 +232,8 @@ CTID=$(pvesh get /cluster/nextid)
 echo "🆔 ID del contenedor: $CTID"
 
 echo "⚙️ Configurando contenedor..."
-pct create $CTID ${DETECTED_STORAGE}:vztmpl/${TEMPLATE} \
+# Corregido: Usar la plantilla desde la caché local
+pct create $CTID local:vztmpl/${TEMPLATE} \
   -hostname cloudflare-stack \
   -storage ${DETECTED_STORAGE} \
   -rootfs ${DETECTED_STORAGE}:${var_disk} \
