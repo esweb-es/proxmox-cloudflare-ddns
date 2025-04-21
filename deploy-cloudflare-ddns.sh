@@ -93,4 +93,54 @@ lxc-attach -n $CTID -- bash -c "
 apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb
+echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list
+apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+"
+
+# ========================
+# DESPLEGAR CLOUDFLARE DDNS
+# ========================
+if [[ "$INSTALL_DDNS" == "s" ]]; then
+  echo "🚀 Desplegando Cloudflare DDNS..."
+  lxc-attach -n $CTID -- bash -c '
+    mkdir -p /opt/ddns && cd /opt/ddns
+    cat <<EOF > docker-compose.yml
+services:
+  cloudflare-ddns:
+    image: oznu/cloudflare-ddns:latest
+    restart: always
+    environment:
+      - API_KEY='"${CF_API_KEY}"'
+      - ZONE='"${CF_ZONE}"'
+      - SUBDOMAIN='"${CF_SUBDOMAIN}"'
+      - PROXIED=false
+EOF
+    docker compose up -d
+  '
+  msg_ok "Cloudflare DDNS desplegado correctamente"
+fi
+
+# ========================
+# DESPLEGAR CLOUDFLARED TUNNEL
+# ========================
+if [[ "$INSTALL_TUNNEL" == "s" ]]; then
+  echo "🚀 Desplegando Cloudflared Tunnel..."
+  lxc-attach -n $CTID -- bash -c '
+    mkdir -p /opt/cloudflare && cd /opt/cloudflare
+    cat <<EOF > docker-compose.yml
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel --no-autoupdate run --token '"${CF_TUNNEL_TOKEN}"'
+EOF
+    docker compose up -d
+  '
+  msg_ok "Cloudflared Tunnel desplegado correctamente"
+fi
+
+# ========================
+# FINAL
+# ========================
+msg_ok "🎉 Contenedor LXC #$CTID desplegado correctamente."
+echo -e "\nPuedes acceder con: \e[1mpct enter $CTID\e[0m y usar la contraseña de root que proporcionaste."
