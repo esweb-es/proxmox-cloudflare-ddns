@@ -76,6 +76,7 @@ pct create $CTID ${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE} \
   -net0 name=eth0,bridge=vmbr0,ip=dhcp \
   -unprivileged ${var_unprivileged} \
   -features nesting=1
+  -onboot 1
 
 pct start $CTID
 sleep 5
